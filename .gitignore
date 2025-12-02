@@ -1,0 +1,10 @@
+.kilocode
+Backend/__pycache__
+Backend/.venv
+Backend/data
+Backend/services/__pycache__
+Backend/Agents/__pycache__
+Backend/configs
+Backend/btc_training.log
+Backend/nifty_training.log
+Backend/multi_asset_training.log

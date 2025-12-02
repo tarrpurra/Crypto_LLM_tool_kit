@@ -1,0 +1,397 @@
+{
+  "training_date": "2025-12-01T16:40:05.619060",
+  "companies_targeted": 15,
+  "companies_trained": 15,
+  "results": [
+    {
+      "symbol": "RELIANCE",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.007710933219641447,
+        "val_loss": 0.007432029116898775,
+        "epochs_trained": 17
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 1.3485041421359174,
+        "test_rmse": 25.023616278736885
+      },
+      "training_time": 51.627803564071655,
+      "data_points": 542,
+      "signal": {
+        "ticker": "RELIANCE",
+        "current_price": 1566.0999755859375,
+        "predicted_price": 1543.575231971797,
+        "lstm_prediction": 1541.2245606232814,
+        "xgb_prediction": 1545.9259033203125,
+        "signal": "neutral",
+        "confidence": 0.9856173015993355,
+        "models_used": 2
+      }
+    },
+    {
+      "symbol": "HDFCBANK",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.006565479561686516,
+        "val_loss": 0.001472777221351862,
+        "epochs_trained": 30
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 0.661455096325178,
+        "test_rmse": 30.45807377609684
+      },
+      "training_time": 86.76659798622131,
+      "data_points": 542,
+      "signal": {
+        "ticker": "HDFCBANK",
+        "current_price": 1002.0999755859376,
+        "predicted_price": 981.570981227071,
+        "lstm_prediction": 1005.5964302275795,
+        "xgb_prediction": 957.5455322265625,
+        "signal": "bearish",
+        "confidence": 0.9795140256870447,
+        "models_used": 2
+      }
+    },
+    {
+      "symbol": "INFY",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.008459004573523998,
+        "val_loss": 0.003446594113484025,
+        "epochs_trained": 27
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 1.9884158137205636,
+        "test_rmse": 23.776280894286092
+      },
+      "training_time": 74.85924172401428,
+      "data_points": 542,
+      "signal": {
+        "ticker": "INFY",
+        "current_price": 1564.0,
+        "predicted_price": 1551.8571439739285,
+        "lstm_prediction": 1546.588067244732,
+        "xgb_prediction": 1557.126220703125,
+        "signal": "neutral",
+        "confidence": 0.9922360255587778,
+        "models_used": 2
+      }
+    },
+    {
+      "symbol": "ICICIBANK",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.004990098532289267,
+        "val_loss": 0.001629531616345048,
+        "epochs_trained": 13
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 0.8476898569941208,
+        "test_rmse": 34.514582937662645
+      },
+      "training_time": 36.21727156639099,
+      "data_points": 542,
+      "signal": {
+        "ticker": "ICICIBANK",
+        "current_price": 1390.0999755859375,
+        "predicted_price": 1381.6848931066843,
+        "lstm_prediction": 1363.7538194164933,
+        "xgb_prediction": 1399.615966796875,
+        "signal": "neutral",
+        "confidence": 0.9939464192309577,
+        "models_used": 2
+      }
+    },
+    {
+      "symbol": "TCS",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.007665864657610655,
+        "val_loss": 0.0030107770580798388,
+        "epochs_trained": 30
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 2.693488115701853,
+        "test_rmse": 222.0338324182385
+      },
+      "training_time": 81.983811378479,
+      "data_points": 542,
+      "signal": {
+        "ticker": "TCS",
+        "current_price": 3133.39990234375,
+        "predicted_price": 3243.198383672512,
+        "lstm_prediction": 3174.811073985649,
+        "xgb_prediction": 3311.585693359375,
+        "signal": "bullish",
+        "confidence": 0.9649586759587776,
+        "models_used": 2
+      }
+    },
+    {
+      "symbol": "KOTAKBANK",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.005070837214589119,
+        "val_loss": 0.003024853765964508,
+        "epochs_trained": 30
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 2.568622402199386,
+        "test_rmse": 48.33073472439071
+      },
+      "training_time": 82.6458854675293,
+      "data_points": 542,
+      "signal": {
+        "ticker": "KOTAKBANK",
+        "current_price": 2147.60009765625,
+        "predicted_price": 2089.80037876651,
+        "lstm_prediction": 2113.159351283021,
+        "xgb_prediction": 2066.44140625,
+        "signal": "bearish",
+        "confidence": 0.9730863679169979,
+        "models_used": 2
+      }
+    },
+    {
+      "symbol": "HINDUNILVR",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.004075775854289532,
+        "val_loss": 0.004952420014888048,
+        "epochs_trained": 30
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 2.5121753765188335,
+        "test_rmse": 35.859867166673936
+      },
+      "training_time": 99.47254347801208,
+      "data_points": 542,
+      "signal": {
+        "ticker": "HINDUNILVR",
+        "current_price": 2464.5,
+        "predicted_price": 2406.6610821885333,
+        "lstm_prediction": 2439.4559534395667,
+        "xgb_prediction": 2373.8662109375,
+        "signal": "bearish",
+        "confidence": 0.9765311755684858,
+        "models_used": 2
+      }
+    },
+    {
+      "symbol": "ITC",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.008008074946701527,
+        "val_loss": 0.0032442747615277767,
+        "epochs_trained": 30
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 0.31823188295154525,
+        "test_rmse": 4.219298404703417
+      },
+      "training_time": 100.18057656288147,
+      "data_points": 542,
+      "signal": {
+        "ticker": "ITC",
+        "current_price": 404.25,
+        "predicted_price": 403.2932056311709,
+        "lstm_prediction": 402.87245252210744,
+        "xgb_prediction": 403.7139587402344,
+        "signal": "neutral",
+        "confidence": 0.9976331617344982,
+        "models_used": 2
+      }
+    },
+    {
+      "symbol": "BAJFINANCE",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.007925502024590969,
+        "val_loss": 0.02045280486345291,
+        "epochs_trained": 30
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 1.0199002587714872,
+        "test_rmse": 92.7020993056708
+      },
+      "training_time": 97.328693151474,
+      "data_points": 542,
+      "signal": {
+        "ticker": "BAJFINANCE",
+        "current_price": 1021.0999755859375,
+        "predicted_price": 977.4375945363397,
+        "lstm_prediction": 1025.4910948343982,
+        "xgb_prediction": 929.3840942382812,
+        "signal": "bearish",
+        "confidence": 0.957239856925329,
+        "models_used": 2
+      }
+    },
+    {
+      "symbol": "BHARTIARTL",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.004372980911284685,
+        "val_loss": 0.00449055340141058,
+        "epochs_trained": 14
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 1.837211527010049,
+        "test_rmse": 111.85308173092314
+      },
+      "training_time": 45.827975034713745,
+      "data_points": 542,
+      "signal": {
+        "ticker": "BHARTIARTL",
+        "current_price": 2089.699951171875,
+        "predicted_price": 1991.2890924037506,
+        "lstm_prediction": 2093.2474963309387,
+        "xgb_prediction": 1889.3306884765625,
+        "signal": "bearish",
+        "confidence": 0.9529067038007362,
+        "models_used": 2
+      }
+    },
+    {
+      "symbol": "MARUTI",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.007740327622741461,
+        "val_loss": 0.07972481101751328,
+        "epochs_trained": 23
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 10.3840092155189,
+        "test_rmse": 2548.9911803859327
+      },
+      "training_time": 76.1062843799591,
+      "data_points": 542,
+      "signal": {
+        "ticker": "MARUTI",
+        "current_price": 16097.0,
+        "predicted_price": 13806.962495448555,
+        "lstm_prediction": 15058.57733464711,
+        "xgb_prediction": 12555.34765625,
+        "signal": "bearish",
+        "confidence": 0.8577351366992952,
+        "models_used": 2
+      }
+    },
+    {
+      "symbol": "ASIANPAINT",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.007033581845462322,
+        "val_loss": 0.009248473681509495,
+        "epochs_trained": 15
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 2.558519929662714,
+        "test_rmse": 140.35567641744342
+      },
+      "training_time": 109.33017611503601,
+      "data_points": 542,
+      "signal": {
+        "ticker": "ASIANPAINT",
+        "current_price": 2867.60009765625,
+        "predicted_price": 2769.262472729941,
+        "lstm_prediction": 2889.8188907723816,
+        "xgb_prediction": 2648.7060546875,
+        "signal": "bearish",
+        "confidence": 0.9657073435704363,
+        "models_used": 2
+      }
+    },
+    {
+      "symbol": "SBIN",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.006145973689854145,
+        "val_loss": 0.009400292299687862,
+        "epochs_trained": 22
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 0.8825176534522552,
+        "test_rmse": 95.40940912815931
+      },
+      "training_time": 146.71767854690552,
+      "data_points": 542,
+      "signal": {
+        "ticker": "SBIN",
+        "current_price": 973.0999755859375,
+        "predicted_price": 863.2262654211867,
+        "lstm_prediction": 943.2505655103421,
+        "xgb_prediction": 783.2019653320312,
+        "signal": "bearish",
+        "confidence": 0.8870889806583419,
+        "models_used": 2
+      }
+    },
+    {
+      "symbol": "NTPC",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.005304686725139618,
+        "val_loss": 0.0005920666735619307,
+        "epochs_trained": 30
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 0.4263999960563179,
+        "test_rmse": 4.41104954432326
+      },
+      "training_time": 184.79128742218018,
+      "data_points": 542,
+      "signal": {
+        "ticker": "NTPC",
+        "current_price": 327.1000061035156,
+        "predicted_price": 329.55868870148817,
+        "lstm_prediction": 327.16193306703883,
+        "xgb_prediction": 331.9554443359375,
+        "signal": "neutral",
+        "confidence": 0.992483391769811,
+        "models_used": 2
+      }
+    },
+    {
+      "symbol": "TITAN",
+      "lstm_result": {
+        "model": "LSTM",
+        "train_loss": 0.011301110498607159,
+        "val_loss": 0.009710952639579773,
+        "epochs_trained": 30
+      },
+      "xgb_result": {
+        "model": "XGBoost",
+        "train_rmse": 3.2048736839999536,
+        "test_rmse": 92.60311609037066
+      },
+      "training_time": 189.85107254981995,
+      "data_points": 542,
+      "signal": {
+        "ticker": "TITAN",
+        "current_price": 3894.89990234375,
+        "predicted_price": 3730.844228664677,
+        "lstm_prediction": 3797.8620413137287,
+        "xgb_prediction": 3663.826416015625,
+        "signal": "bearish",
+        "confidence": 0.9578793607557532,
+        "models_used": 2
+      }
+    }
+  ]
+}
