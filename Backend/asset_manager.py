@@ -29,18 +29,12 @@ class AssetRegistry:
             'ALGO', 'VET', 'ICP', 'FIL', 'TRX', 'ETC'
         ]
 
-        # Tier 3: Major stocks (Nifty 50 companies)
+        # Tier 3: Major cryptocurrencies
         self.stock_assets = [
-            # Top 15 Nifty 50 companies as requested
-            'RELIANCE', 'HDFCBANK', 'INFY', 'ICICIBANK', 'TCS',
-            'KOTAKBANK', 'HINDUNILVR', 'ITC', 'BAJFINANCE', 'BHARTIARTL',
-            'MARUTI', 'ASIANPAINT', 'SBIN', 'NTPC', 'TITAN',
-            # Additional Nifty companies
-            'COALINDIA', 'LT', 'TATASTEEL', 'UPL', 'WIPRO',
-            # Nifty indices
-            'NIFTY',  # Nifty 50 index
-            # International stocks
-            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA'
+            # Top 15 cryptocurrencies
+            'XRP', 'LTC', 'BCH', 'LINK', 'DOT',
+            'ADA', 'SOL', 'AVAX', 'MATIC', 'ALGO',
+            'VET', 'ICP', 'FIL', 'TRX', 'ETC'
         ]
 
         # Tier 4: Unsupported (insufficient volatility or data)
@@ -92,7 +86,7 @@ class AssetRegistry:
             })
         elif status == 'stock_asset':
             info.update({
-                'description': 'Stock asset (requires broker API)',
+                'description': 'Cryptocurrency asset',
                 'estimated_time': '2-4 minutes',
                 'storage_impact': '~700KB'
             })
@@ -265,7 +259,7 @@ class SmartMLAgent:
                 self.logger.error(f"Failed to load pre-trained model for {self.asset}: {e}")
                 self.agent = None
 
-        elif self.status in ['quick_train', 'stock_asset'] and self.auto_train:
+        elif self.status in ['quick_train'] and self.auto_train:
             # Try to train on-demand
             if self._can_train_asset():
                 success = self._train_asset_on_demand()
@@ -373,7 +367,7 @@ class SmartMLAgent:
                 'reason': 'Asset may not have sufficient historical data',
                 'can_train': False
             })
-        elif self.status in ['quick_train', 'stock_asset']:
+        elif self.status in ['quick_train']:
             can_train, reason = self.resource_manager.can_train_asset(self.asset)
             base_response.update({
                 'error': 'Model not trained',
@@ -442,10 +436,10 @@ if __name__ == "__main__":
     print(f"BTC status: {btc_agent.get_training_status()}")
 
     # Test quick-train asset
-    print("\n=== Testing ADA (quick-train) ===")
-    ada_agent = SmartMLAgent('ADA', auto_train=False)
-    print(f"ADA available: {ada_agent.is_available()}")
-    print(f"ADA status: {ada_agent.get_training_status()}")
+    print("\n=== Testing XRP (quick-train) ===")
+    xrp_agent = SmartMLAgent('XRP', auto_train=False)
+    print(f"XRP available: {xrp_agent.is_available()}")
+    print(f"XRP status: {xrp_agent.get_training_status()}")
 
     # Test unsupported asset
     print("\n=== Testing USDT (unsupported) ===")

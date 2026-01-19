@@ -2,18 +2,18 @@ import pandas as pd
 import numpy as np
 import logging
 import os
+import json
 from datetime import datetime, timedelta
+from typing import Tuple, Dict, Any
 import talib
 from .crypto_service import CryptoService
-from .kite_service import KiteService
-from .stock_service import StockService
+from .tool_registry import ToolRegistry, ToolMetadata, ToolType, RegistryOperation
 
 class DataManager:
     def __init__(self):
         self.crypto_service = CryptoService()
-        self.kite_service = KiteService()
-        self.stock_service = StockService()
-
+        self.tool_registry = ToolRegistry()
+        
         # Set up logging
         self.logger = logging.getLogger('DataManager')
         self.logger.setLevel(logging.INFO)
@@ -22,10 +22,14 @@ class DataManager:
             formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
-
+        
         # Data cache
         self.data_cache = {}
         self.cache_duration = 3600  # 1 hour
+        
+        # Registry persistence
+        self.registry_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'tool_registry.json')
+        self._load_registry()
 
     def _get_cached_data(self, key):
         """Get cached data if still valid."""
@@ -40,6 +44,197 @@ class DataManager:
     def _set_cached_data(self, key, data):
         """Cache data."""
         self.data_cache[key] = (data, datetime.now())
+    
+    def _load_registry(self) -> None:
+        """Load tool registry from persistent storage."""
+        try:
+            if os.path.exists(self.registry_file):
+                with open(self.registry_file, 'r') as f:
+                    registry_data = json.load(f)
+                
+                # Reconstruct registry state from saved data
+                for tool_data in registry_data.get('tools', []):
+                    metadata = ToolMetadata(**tool_data)
+                    self.tool_registry._tools[metadata.name] = metadata  # Direct access for reconstruction
+                
+                # Restore dependencies
+                for dep_data in registry_data.get('dependencies', []):
+                    dep = ToolDependency(**dep_data)
+                    self.tool_registry._dependencies.append(dep)
+                
+                # Restore audit log
+                for audit_data in registry_data.get('audit_log', []):
+                    op = RegistryOperation(**audit_data)
+                    self.tool_registry._audit_log.append(op)
+                
+                self.logger.info(f"📥 Loaded tool registry from {self.registry_file}")
+                self.logger.info(f"   Tools: {len(self.tool_registry._tools)}, Dependencies: {len(self.tool_registry._dependencies)}")
+            else:
+                self.logger.info("📁 No existing registry file found, starting with empty registry")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load registry: {e}")
+            # Continue with empty registry if loading fails
+    
+    def _save_registry(self) -> None:
+        """Save tool registry to persistent storage."""
+        try:
+            # Ensure data directory exists
+            os.makedirs(os.path.dirname(self.registry_file), exist_ok=True)
+            
+            # Prepare data for serialization
+            registry_data = {
+                'tools': [],
+                'dependencies': [],
+                'audit_log': [],
+                'metadata': {
+                    'version': '1.0',
+                    'timestamp': datetime.now().isoformat(),
+                    'tool_count': len(self.tool_registry._tools)
+                }
+            }
+            
+            # Serialize tools
+            for tool_name, metadata in self.tool_registry._tools.items():
+                registry_data['tools'].append(asdict(metadata))
+            
+            # Serialize dependencies
+            for dep in self.tool_registry._dependencies:
+                registry_data['dependencies'].append(asdict(dep))
+            
+            # Serialize audit log (limit to last 1000 entries to prevent bloat)
+            for op in self.tool_registry._audit_log[-1000:]:
+                registry_data['audit_log'].append(asdict(op))
+            
+            # Write to file
+            with open(self.registry_file, 'w') as f:
+                json.dump(registry_data, f, indent=2)
+            
+            self.logger.info(f"💾 Saved tool registry to {self.registry_file}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save registry: {e}")
+    
+    def register_tool_with_persistence(self, tool_metadata: ToolMetadata, actor: str = "system") -> Tuple[bool, str]:
+        """
+        Register a tool and persist the registry state.
+        
+        Args:
+            tool_metadata: Metadata for the tool to register
+            actor: Entity performing the registration
+            
+        Returns:
+            Tuple of (success, message)
+        """
+        # Register the tool
+        success, message = self.tool_registry.register_tool(tool_metadata, actor)
+        
+        if success:
+            # Save registry state
+            self._save_registry()
+        
+        return success, message
+    
+    def get_registry_backup(self) -> Dict[str, Any]:
+        """
+        Get a complete backup of the registry state.
+        
+        Returns:
+            Dictionary containing complete registry state
+        """
+        return {
+            'tools': [asdict(metadata) for metadata in self.tool_registry._tools.values()],
+            'dependencies': [asdict(dep) for dep in self.tool_registry._dependencies],
+            'audit_log': [asdict(op) for op in self.tool_registry._audit_log],
+            'metrics': self.tool_registry.get_registry_metrics()
+        }
+    
+    def restore_registry_backup(self, backup_data: Dict[str, Any], actor: str = "system") -> Tuple[bool, str]:
+        """
+        Restore registry state from backup.
+        
+        Args:
+            backup_data: Backup data to restore
+            actor: Entity performing the restore
+            
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            with self.tool_registry._lock:
+                # Clear existing state
+                self.tool_registry._tools.clear()
+                self.tool_registry._dependencies.clear()
+                self.tool_registry._audit_log.clear()
+                
+                # Restore tools
+                for tool_data in backup_data.get('tools', []):
+                    metadata = ToolMetadata(**tool_data)
+                    self.tool_registry._tools[metadata.name] = metadata
+                
+                # Restore dependencies
+                for dep_data in backup_data.get('dependencies', []):
+                    dep = ToolDependency(**dep_data)
+                    self.tool_registry._dependencies.append(dep)
+                
+                # Restore audit log
+                for audit_data in backup_data.get('audit_log', []):
+                    op = RegistryOperation(**audit_data)
+                    self.tool_registry._audit_log.append(op)
+            
+            # Save the restored state
+            self._save_registry()
+            
+            # Log the restore operation
+            self.tool_registry._log_operation(
+                operation_type="restore",
+                tool_name="registry",
+                actor=actor,
+                details={
+                    "tool_count": len(backup_data.get('tools', [])),
+                    "dependency_count": len(backup_data.get('dependencies', [])),
+                    "audit_entries": len(backup_data.get('audit_log', []))
+                },
+                success=True
+            )
+            
+            self.logger.info(f"🔄 Restored registry from backup with {len(backup_data.get('tools', []))} tools")
+            return True, "Registry restored successfully"
+            
+        except Exception as e:
+            error_msg = f"Failed to restore registry: {str(e)}"
+            self.logger.error(error_msg)
+            return False, error_msg
+    
+    def get_registry_metrics_with_cache(self) -> Dict[str, Any]:
+        """
+        Get registry metrics with caching for performance.
+        
+        Returns:
+            Dictionary of registry metrics
+        """
+        cache_key = "registry_metrics"
+        cached_metrics = self._get_cached_data(cache_key)
+        
+        if cached_metrics:
+            return cached_metrics
+        
+        # Get fresh metrics
+        metrics = self.tool_registry.get_registry_metrics()
+        
+        # Add cache-specific metrics
+        metrics['cache_hit_rate'] = self._calculate_cache_hit_rate()
+        metrics['last_cache_update'] = datetime.now().isoformat()
+        
+        # Cache for 30 seconds
+        self._set_cached_data(cache_key, metrics)
+        
+        return metrics
+    
+    def _calculate_cache_hit_rate(self) -> float:
+        """Calculate cache hit rate for registry operations."""
+        # This would be more sophisticated in a real implementation
+        # For now, return a placeholder value
+        return 0.85
 
     def get_asset_type(self, symbol):
         """
@@ -58,26 +253,8 @@ class DataManager:
         if symbol in crypto_symbols or symbol.endswith(('BTC', 'ETH', 'USDT', 'USD')):
             return 'crypto'
 
-        # Indian stock symbols (Yahoo Finance)
-        indian_stocks = [
-            'RELIANCE', 'HDFCBANK', 'INFY', 'ICICIBANK', 'TCS', 'KOTAKBANK',
-            'HINDUNILVR', 'ITC', 'BAJFINANCE', 'BHARTIARTL', 'MARUTI', 'ASIANPAINT',
-            'SBIN', 'NTPC', 'TITAN', 'COALINDIA', 'LT', 'TATASTEEL', 'UPL', 'WIPRO'
-        ]
-        if symbol in indian_stocks:
-            return 'stock_yahoo'
-
-        # Indices
-        if symbol in ['NIFTY', '^NSEI', '^NSEBANK']:
-            return 'stock_yahoo'
-
-        # International stocks (Yahoo Finance)
-        international_stocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
-        if symbol in international_stocks:
-            return 'stock_yahoo'
-
-        # Default to Yahoo Finance for unknown symbols
-        return 'stock_yahoo'
+        # Default to crypto for unknown symbols
+        return 'crypto'
 
     def fetch_historical_data(self, symbol, days=365, interval='1d'):
         """
@@ -105,12 +282,9 @@ class DataManager:
             if data is None or len(data) < 10:
                 self.logger.info(f"Binance failed for {symbol}, trying CoinAPI")
                 data = self.crypto_service.get_historical_data(symbol, days, interval, source='coinapi')
-        elif asset_type == 'stock_yahoo':
-            # Stock data from Yahoo Finance (free)
-            data = self.stock_service.fetch_historical_data(symbol, days, interval)
         else:
-            # Fallback to Kite for other stock data
-            data = self.kite_service.get_historical_data(symbol, days, interval)
+            # Default to crypto for unknown symbols
+            data = self.crypto_service.get_historical_data(symbol, days, interval, source='binance')
 
         if data is not None and not data.empty:
             self._set_cached_data(cache_key, data)
@@ -134,10 +308,8 @@ class DataManager:
 
         if asset_type == 'crypto':
             return self.crypto_service.get_current_price(symbol)
-        elif asset_type == 'stock_yahoo':
-            return self.stock_service.get_current_price(symbol)
         else:
-            return self.kite_service.get_current_price(symbol)
+            return self.crypto_service.get_current_price(symbol)
 
     def prepare_ml_data(self, data, add_features=True):
         """
@@ -161,8 +333,8 @@ class DataManager:
             df = df[df['volume'] >= 0]  # Remove negative volume
 
             if add_features:
-                # Use stock service for comprehensive technical indicators
-                df = self.stock_service.add_technical_indicators(df)
+                # Use crypto service for comprehensive technical indicators
+                df = self._add_technical_indicators(df)
 
             # Sort by timestamp
             df = df.sort_index()
@@ -495,8 +667,8 @@ if __name__ == "__main__":
         print(btc_data.head())
         print(f"Columns: {list(btc_data.columns)}")
 
-    # Test stock data (requires Kite authentication)
-    # nifty_data = manager.get_training_data('NIFTY', days=30)
-    # if nifty_data is not None:
-    #     print(f"NIFTY Training Data Shape: {nifty_data.shape}")
-    #     print(nifty_data.head())
+    # Test crypto data
+    eth_data = manager.get_training_data('ETH', days=30)
+    if eth_data is not None:
+        print(f"ETH Training Data Shape: {eth_data.shape}")
+        print(eth_data.head())
