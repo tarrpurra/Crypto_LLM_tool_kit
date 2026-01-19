@@ -11,6 +11,10 @@ import logging
 import asyncio
 import sys
 import os
+import time
+from datetime import datetime
+from dataclasses import asdict, is_dataclass
+from enum import Enum
 from typing import Dict, Any, Optional, List
 from concurrent.futures import ThreadPoolExecutor
 
@@ -29,10 +33,12 @@ from Agents.technical_agent import TechnicalAgent
 from Agents.ml_agent import MLAgent
 from Agents.tool_registry_agent import ToolRegistryAgent
 from Core.Thinking_agent import VibeTraderThinker
+from Core.agent_orchestrator import LLMToolOrchestrator
 
 # Import tool registry
 from services.tool_registry import ToolRegistry, ToolMetadata, ToolType, ToolStatus
 from services.data_manager import DataManager
+from services.real_time_tool import RealTimeTool
 
 # Set up logging with colors
 import colorlog
@@ -75,6 +81,7 @@ class TradingSystem:
         self.tool_registry = ToolRegistry()
         self.registry_agent = ToolRegistryAgent()
         self.data_manager = DataManager()
+        self.real_time_tool = RealTimeTool()
         
         # Register all agents with the tool registry
         self._initialize_tool_registry()
@@ -86,6 +93,12 @@ class TradingSystem:
         self.ml_agent = MLAgent()
         self.risk_agent = RiskAgent(RiskConfig())
         self.thinker = VibeTraderThinker(api_key)
+        self.orchestrator = LLMToolOrchestrator(
+            api_key=api_key,
+            tool_registry=self.tool_registry,
+            tools=self._build_tool_definitions(),
+            tool_handlers=self._build_tool_handlers(),
+        )
 
         logger.info("✅ Trading system initialized with all agents and tool registry")
     
@@ -196,10 +209,267 @@ class TradingSystem:
                 "decision_factors": ["news", "technical", "ml", "risk", "portfolio"]
             }
         )
+
+        # Register Real-Time Tool
+        self.registry_agent.register_agent(
+            agent_name="real_time_tool",
+            agent_type=ToolType.DATA,
+            version="1.0.0",
+            description="Fetches real-time Binance price, OHLCV, and volume data",
+            capabilities=["price", "ohlcv", "volume", "binance_public_api"],
+            dependencies=[],
+            crypto_config={
+                "supported_exchanges": ["binance"],
+                "default_pair": "BTC/USDT",
+                "timeframes": ["1m", "5m", "15m"]
+            }
+        )
+
+        # Register tool aliases for LLM orchestration
+        self.registry_agent.register_agent(
+            agent_name="sentiment_tool",
+            agent_type=ToolType.SENTIMENT,
+            version="1.0.0",
+            description="Aggregates news sentiment via NewsAgent",
+            capabilities=["news_sentiment", "headline_analysis"],
+            dependencies=["NewsAgent"],
+            crypto_config={
+                "supported_exchanges": ["binance", "coinbase"],
+                "default_pair": "BTC/USDT"
+            }
+        )
+
+        self.registry_agent.register_agent(
+            agent_name="technical_tool",
+            agent_type=ToolType.TECHNICAL,
+            version="1.0.0",
+            description="Wrapper for technical indicators and signals",
+            capabilities=["indicators", "market_bias", "risk_levels"],
+            dependencies=["TechnicalAgent"],
+            crypto_config={
+                "supported_exchanges": ["binance", "coinbase", "kraken"],
+                "default_pair": "BTC/USDT"
+            }
+        )
+
+        self.registry_agent.register_agent(
+            agent_name="ml_tool",
+            agent_type=ToolType.ML,
+            version="1.0.0",
+            description="Machine-learning price projection tool",
+            capabilities=["forecasting", "prediction", "confidence_scoring"],
+            dependencies=["MLAgent"],
+            crypto_config={
+                "supported_exchanges": ["binance", "coinbase"],
+                "default_pair": "BTC/USDT"
+            }
+        )
+
+        self.registry_agent.register_agent(
+            agent_name="risk_agent",
+            agent_type=ToolType.RISK,
+            version="1.0.0",
+            description="Risk evaluation and position sizing agent",
+            capabilities=["risk_assessment", "position_sizing"],
+            dependencies=["RiskAgent"],
+            crypto_config={
+                "supported_exchanges": ["binance", "coinbase"],
+                "default_pair": "BTC/USDT"
+            }
+        )
+
+        self.registry_agent.register_agent(
+            agent_name="portfolio_agent",
+            agent_type=ToolType.PORTFOLIO,
+            version="1.0.0",
+            description="Portfolio and account state retrieval tool",
+            capabilities=["portfolio_snapshot", "account_state"],
+            dependencies=["UserAgent"],
+            crypto_config={
+                "supported_exchanges": ["binance", "coinbase", "kraken"],
+                "default_pair": "BTC/USDT"
+            }
+        )
         
         logger.info("🔧 Tool Registry initialized with all agents registered")
         logger.info(f"   Registered tools: {len(self.registry_agent.registry.discover_tools())}")
-    
+
+    def _build_tool_definitions(self) -> List[Dict[str, Any]]:
+        """Build tool definitions for LLM tool calling."""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "real_time_tool",
+                    "description": "Fetch live Binance price, OHLCV (1m/5m/15m), and 24h volume.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": {"type": "string", "description": "Trading pair like BTCUSDT."},
+                            "intervals": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of intervals (default: [\"1m\", \"5m\", \"15m\"]).",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of candles to fetch per interval.",
+                                "default": 50,
+                            },
+                        },
+                        "required": ["symbol"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "technical_tool",
+                    "description": "Compute technical indicators and market bias for a symbol.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": {"type": "string"},
+                            "asset_type": {"type": "string", "default": "crypto"},
+                            "timeframe": {"type": "string", "default": "1d"},
+                            "lookback": {"type": "integer", "default": 365},
+                        },
+                        "required": ["symbol"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "sentiment_tool",
+                    "description": "Fetch news sentiment and summarization for a symbol.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": {"type": "string"},
+                            "days": {"type": "integer", "default": 1},
+                            "max_articles": {"type": "integer", "default": 5},
+                        },
+                        "required": ["symbol"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "ml_tool",
+                    "description": "Run ML price prediction using historical data.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": {"type": "string"},
+                            "lookback_days": {"type": "integer", "default": 365},
+                            "interval": {"type": "string", "default": "1d"},
+                        },
+                        "required": ["symbol"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "risk_agent",
+                    "description": "Evaluate risk for a trade request and account state.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "trade_request": {"type": "object"},
+                            "account_state": {"type": "object"},
+                        },
+                        "required": ["trade_request", "account_state"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "portfolio_agent",
+                    "description": "Fetch portfolio and account state for the current user.",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+        ]
+
+    def _build_tool_handlers(self) -> Dict[str, Any]:
+        """Map tool names to handlers for the orchestrator."""
+        return {
+            "real_time_tool": self._handle_real_time_tool,
+            "technical_tool": self._handle_technical_tool,
+            "sentiment_tool": self._handle_sentiment_tool,
+            "ml_tool": self._handle_ml_tool,
+            "risk_agent": self._handle_risk_agent_tool,
+            "portfolio_agent": self._handle_portfolio_tool,
+        }
+
+    def _to_json_compatible(self, value: Any) -> Any:
+        """Convert dataclasses, enums, and datetimes to JSON-safe formats."""
+        if is_dataclass(value):
+            return self._to_json_compatible(asdict(value))
+        if isinstance(value, Enum):
+            return value.name
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, dict):
+            return {key: self._to_json_compatible(val) for key, val in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [self._to_json_compatible(item) for item in value]
+        return value
+
+    def _handle_real_time_tool(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle real-time Binance market data requests."""
+        symbol = args.get("symbol")
+        intervals = args.get("intervals")
+        limit = args.get("limit", 50)
+        return self.real_time_tool.fetch_market_data(symbol, intervals=intervals, limit=limit)
+
+    def _handle_technical_tool(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle technical analysis requests."""
+        symbol = args.get("symbol")
+        asset_type = args.get("asset_type", "crypto")
+        timeframe = args.get("timeframe", "1d")
+        lookback = args.get("lookback", 365)
+        signal = self.technical_agent.get_signal(symbol, asset_type, timeframe, lookback)
+        return self._to_json_compatible(signal)
+
+    def _handle_sentiment_tool(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle sentiment/news requests."""
+        symbol = args.get("symbol")
+        days = args.get("days", 1)
+        max_articles = args.get("max_articles", 5)
+        return self.news_agent.get_news_signal(symbol, days=days, max_articles=max_articles)
+
+    def _handle_ml_tool(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle ML forecasting requests."""
+        symbol = args.get("symbol")
+        lookback_days = args.get("lookback_days", 365)
+        interval = args.get("interval", "1d")
+        historical_data = self.data_manager.fetch_historical_data(
+            symbol,
+            days=lookback_days,
+            interval=interval,
+        )
+
+        if historical_data is None or historical_data.empty:
+            return {"ticker": symbol, "error": "No historical data available for ML analysis."}
+
+        ml_signal = self.ml_agent.get_ml_signal(symbol, historical_data)
+        return self._to_json_compatible(ml_signal)
+
+    def _handle_risk_agent_tool(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle risk evaluation requests."""
+        trade_request = args.get("trade_request", {})
+        account_state = args.get("account_state", {})
+        return self.evaluate_risk(trade_request, account_state)
+
+    def _handle_portfolio_tool(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle portfolio/account state requests."""
+        return self.fetch_user_data()
+
     def fetch_user_data(self) -> Dict[str, Any]:
         """Fetch user data from the UserAgent with registry integration."""
         # Log tool invocation
@@ -565,6 +835,39 @@ class TradingSystem:
                 "symbol": symbol,
                 "registry_status": self.tool_registry.check_system_health()
             }
+
+    def _safe_parse_json(self, content: str) -> Dict[str, Any]:
+        """Safely parse JSON returned by the LLM."""
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            return {
+                "summary": "Model output was not valid JSON.",
+                "raw": content,
+                "tools_used": [],
+                "analysis": {"market_state": "", "signals": [], "supporting_data": {}},
+                "risk": {"volatility": "", "risk_reward": "", "notes": []},
+                "action": {"bias": "HOLD", "confidence": 0, "time_horizon": "swing", "conditions": []},
+                "data_gaps": ["Model output was not valid JSON."],
+            }
+
+    def run_agentic_analysis(self, user_prompt: str) -> Dict[str, Any]:
+        """Run the LLM-driven tool orchestration flow for an arbitrary prompt."""
+        logger.info("🧠 Starting agentic analysis flow")
+        result = self.orchestrator.run(user_prompt)
+
+        if "raw" in result:
+            final_payload = self._safe_parse_json(result["raw"])
+            final_payload["tools_used"] = result.get("tools_used", [])
+        else:
+            final_payload = result
+
+        final_payload["_registry_metrics"] = {
+            "registry_health": self.tool_registry.check_system_health(),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        return final_payload
     
     def get_system_status(self) -> Dict[str, Any]:
         """Get comprehensive system status including all agents and registry."""
@@ -637,9 +940,15 @@ class TradingTUI:
         
         elif cmd == "trade":
             if len(args) >= 1:
-                self._run_trade_workflow(args[0])
+                self._run_agentic_prompt(f"Analyze {args[0]} in real time for short-term trading.")
             else:
                 print("❌ Usage: trade <symbol> [asset_type]")
+
+        elif cmd == "analyze":
+            if args:
+                self._run_agentic_prompt(" ".join(args))
+            else:
+                print("❌ Usage: analyze <prompt>")
         
         elif cmd == "registry":
             self._show_registry_info()
@@ -654,7 +963,7 @@ class TradingTUI:
             print("="*60)
         
         else:
-            print(f"❌ Unknown command: {cmd}")
+            self._run_agentic_prompt(command)
     
     def _show_help(self) -> None:
         """Show help information."""
@@ -663,7 +972,8 @@ class TradingTUI:
         print("  exit/quit         - Exit the TUI")
         print("  status            - Show system status")
         print("  agents            - List all registered agents")
-        print("  trade <symbol>    - Run trading workflow for symbol (e.g., trade BTC)")
+        print("  trade <symbol>    - Quick analysis prompt for a symbol (e.g., trade BTCUSDT)")
+        print("  analyze <prompt>  - Run a custom analysis prompt via the LLM")
         print("  registry          - Show registry information")
         print("  health            - Show system health metrics")
         print("  clear             - Clear the screen")
@@ -703,50 +1013,24 @@ class TradingTUI:
                 print(f"   Dependencies: {', '.join(agent['dependencies'])}")
             print()
     
-    def _run_trade_workflow(self, symbol: str) -> None:
-        """Run trading workflow for a symbol."""
-        asset_type = 'crypto'
-        
-        print(f"\n🔍 Running trading workflow for {symbol}...")
-        
+    def _run_agentic_prompt(self, prompt: str) -> None:
+        """Run agentic analysis for a user prompt."""
+        print(f"\n🧠 Running agentic analysis...")
+        print(f"Prompt: {prompt}\n")
+
         try:
-            result = self.system.run_trading_workflow(symbol, asset_type)
-            
-            if 'error' in result:
+            result = self.system.run_agentic_analysis(prompt)
+
+            if "error" in result:
                 print(f"❌ Error: {result['error']}")
-            else:
-                print(f"\n📊 RECOMMENDATION FOR {symbol}")
-                print("-" * 40)
-                print(f"Recommendation: {result['recommendation']}")
-                print(f"Confidence: {result['confidence']}%")
-                print(f"\nKey Drivers:")
-                for driver in result['key_drivers']:
-                    print(f"  • {driver['source_agent']}: {driver['summary']} (weight: {driver['weight']})")
-                
-                print(f"\nRisk Plan:")
-                print(f"  Position Size: {result['risk_plan']['position_size_pct']}%")
-                print(f"  Entry: {result['risk_plan']['entry']['type']}")
-                print(f"  Stop Loss: {result['risk_plan']['stop_loss']['type']} at {result['risk_plan']['stop_loss']['value']}")
-                print(f"  Take Profit: {result['risk_plan']['take_profit']['type']} at {result['risk_plan']['take_profit']['value']}")
-                print(f"  Time Horizon: {result['risk_plan']['time_horizon']}")
-                
-                if 'invalidations' in result['risk_plan'] and result['risk_plan']['invalidations']:
-                    print(f"\nInvalidations:")
-                    for inv in result['risk_plan']['invalidations']:
-                        print(f"  • {inv}")
-                
-                if 'notes' in result and result['notes']:
-                    print(f"\nNotes:")
-                    for note in result['notes']:
-                        print(f"  • {note}")
-                
-                if '_registry_metrics' in result:
-                    print(f"\nRegistry Metrics:")
-                    print(f"  Tool Chain: {' → '.join(result['_registry_metrics']['tool_chain'])}")
-                    print(f"  Registry Status: {result['_registry_metrics']['registry_health']['registry_status']}")
-        
+                return
+
+            print("\n📊 ANALYSIS RESULT")
+            print("-" * 40)
+            print(json.dumps(result, indent=2))
+
         except Exception as e:
-            print(f"❌ Error running workflow: {e}")
+            print(f"❌ Error running analysis: {e}")
     
     def _show_registry_info(self) -> None:
         """Show registry information."""
