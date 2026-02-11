@@ -88,13 +88,29 @@ class RiskAgent:
 
     # --------- Public API ---------
     def evaluate(self, req: TradeRequest, acct: AccountState, *,
-                 volatility_pct: Optional[float] = None,
-                 liquidity_score: Optional[float] = None) -> RiskDecision:
+                  volatility_pct: Optional[float] = None,
+                  liquidity_score: Optional[float] = None) -> RiskDecision:
         """
         volatility_pct: optional (e.g., ATR% or 1h vol %)
         liquidity_score: optional (0-1), where 1 = excellent liquidity
         """
         reasons: List[str] = []
+
+        # Safeguard: Handle None values in account state
+        if acct.equity_value is None:
+            acct.equity_value = 0.0
+        if acct.cash_available is None:
+            acct.cash_available = 0.0
+        if acct.day_pnl is None:
+            acct.day_pnl = 0.0
+        if acct.open_positions is None:
+            acct.open_positions = []
+            
+        # Safeguard: Handle None values in trade request
+        if req.entry_price is None:
+            req.entry_price = 0.0
+        if req.stop_loss is None:
+            req.stop_loss = 0.0
 
         # Basic sanity
         if req.entry_price <= 0 or req.stop_loss <= 0:
@@ -228,18 +244,32 @@ class RiskAgent:
         )
 
     def _stop_distance_pct(self, req: TradeRequest) -> float:
-        if req.side == "BUY":
-            dist = (req.entry_price - req.stop_loss) / req.entry_price * 100.0
-        else:
-            dist = (req.stop_loss - req.entry_price) / req.entry_price * 100.0
-        return abs(dist)
+        # Handle None values
+        if (req.entry_price is None or req.stop_loss is None or 
+            req.entry_price == 0):
+            return 0.0
+        
+        try:
+            if req.side == "BUY":
+                dist = (req.entry_price - req.stop_loss) / req.entry_price * 100.0
+            else:
+                dist = (req.stop_loss - req.entry_price) / req.entry_price * 100.0
+            return abs(dist)
+        except (TypeError, ZeroDivisionError):
+            return 0.0
 
     def _rr(self, req: TradeRequest) -> float:
-        if req.take_profit is None:
+        if req.take_profit is None or req.stop_loss is None:
             return 0.0
-        risk = abs(req.entry_price - req.stop_loss)
-        reward = abs(req.take_profit - req.entry_price)
-        return (reward / risk) if risk > 0 else 0.0
+        # Handle None values in entry_price or stop_loss
+        if (req.entry_price is None or req.stop_loss is None):
+            return 0.0
+        try:
+            risk = abs(req.entry_price - req.stop_loss)
+            reward = abs(req.take_profit - req.entry_price)
+            return (reward / risk) if risk > 0 else 0.0
+        except TypeError:
+            return 0.0
 
     def _map_confidence(self, conf: float) -> float:
         # maps [min_conf, 1] -> [0.5, 1.0]
@@ -248,11 +278,18 @@ class RiskAgent:
         return 0.5 + 0.5 * ((conf - lo) / max(1e-9, (1.0 - lo)))
 
     def _calc_qty_from_risk(self, req: TradeRequest, risk_amount: float) -> float:
-        stop_dist = abs(req.entry_price - req.stop_loss)
-        if stop_dist <= 0:
+        # Handle None values
+        if (req.entry_price is None or req.stop_loss is None or 
+            risk_amount is None or risk_amount <= 0):
             return 0.0
-        raw_qty = risk_amount / stop_dist
-        return self._round_qty(raw_qty, req.market)
+        try:
+            stop_dist = abs(req.entry_price - req.stop_loss)
+            if stop_dist <= 0:
+                return 0.0
+            raw_qty = risk_amount / stop_dist
+            return self._round_qty(raw_qty, req.market)
+        except TypeError:
+            return 0.0
 
     def _round_qty(self, qty: float, market: Market) -> float:
         if market == "equity":
@@ -262,14 +299,21 @@ class RiskAgent:
             return math.floor(qty / step) * step
 
     def _estimate_risk_amount(self, req: TradeRequest, qty: float) -> float:
-        # basic buffer for slippage + fees (bps)
-        price = req.entry_price
-        slip = price * (self.cfg.slippage_bps / 10000.0)
-        fee = price * (self.cfg.fee_bps / 10000.0)
-        buffered_entry = price + slip + fee if req.side == "BUY" else price - slip - fee
+        # Handle None values
+        if (req.entry_price is None or req.stop_loss is None or 
+            qty is None or qty <= 0):
+            return 0.0
+        try:
+            # basic buffer for slippage + fees (bps)
+            price = req.entry_price
+            slip = price * (self.cfg.slippage_bps / 10000.0)
+            fee = price * (self.cfg.fee_bps / 10000.0)
+            buffered_entry = price + slip + fee if req.side == "BUY" else price - slip - fee
 
-        stop_dist = abs(buffered_entry - req.stop_loss)
-        return stop_dist * qty
+            stop_dist = abs(buffered_entry - req.stop_loss)
+            return stop_dist * qty
+        except TypeError:
+            return 0.0
 
     def _symbol_exposure_pct(self, acct: AccountState, symbol: str, market: Market) -> float:
         exposure = 0.0

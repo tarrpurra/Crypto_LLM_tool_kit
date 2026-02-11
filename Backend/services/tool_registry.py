@@ -58,8 +58,8 @@ class ToolMetadata:
     capabilities: List[str]
     dependencies: List[str]
     crypto_config: Dict[str, Any]
-    created_at: float
-    updated_at: float
+    created_at: float = None
+    updated_at: float = None
     status: ToolStatus = ToolStatus.UNINITIALIZED
     status_message: str = ""
     last_health_check: float = 0.0
@@ -271,10 +271,12 @@ class ToolRegistry:
                 )
                 return False, error_msg
             
-            # Set timestamps
+            # Set timestamps if not provided
             now = time.time()
-            tool_metadata.created_at = now
-            tool_metadata.updated_at = now
+            if tool_metadata.created_at is None:
+                tool_metadata.created_at = now
+            if tool_metadata.updated_at is None:
+                tool_metadata.updated_at = now
             tool_metadata.status = ToolStatus.INITIALIZING
             tool_metadata.status_message = "Tool registration initiated"
             
@@ -611,16 +613,23 @@ class ToolRegistry:
         """
         with self._lock:
             if tool_name not in self._tools:
-                error_msg = f"Tool {tool_name} not found"
-                self._log_operation(
-                    operation_type="log_invocation",
-                    tool_name=tool_name,
-                    actor=actor,
-                    details={"success": success, "response_time": response_time},
-                    success=False,
-                    error_message=error_msg
+                # If tool is not registered, automatically register it as a basic tool
+                logger.warning(f"Tool {tool_name} not registered, creating basic registration")
+                basic_metadata = ToolMetadata(
+                    name=tool_name,
+                    version="1.0.0",
+                    tool_type=ToolType.OTHER,
+                    description=f"Auto-registered tool: {tool_name}",
+                    capabilities=[],
+                    dependencies=[],
+                    crypto_config={
+                        "supported_exchanges": ["binance", "coinbase"],
+                        "default_pair": "BTC/USDT"
+                    },
+                    status=ToolStatus.HEALTHY
                 )
-                return False, error_msg
+                self._tools[tool_name] = basic_metadata
+                logger.info(f"🔧 Auto-registered tool: {tool_name}")
             
             # Update tool metrics
             tool = self._tools[tool_name]
@@ -868,6 +877,8 @@ class ToolRegistry:
             
             # Perform health check (update last_health_check timestamp)
             tool.last_health_check = time.time()
+            if tool.created_at is None:
+                tool.created_at = tool.last_health_check
             
             return {
                 "status": tool.status.name,
@@ -964,3 +975,50 @@ if __name__ == "__main__":
     # Export audit log
     success, message = registry.export_audit_log("test_registry_audit.json")
     print(f"Audit export: {success}, {message}")
+    
+    # ==================== COINDESK TOOL REGISTRATION ====================
+    # Register CoinDesk Market Data Tool
+    coindesk_metadata = ToolMetadata(
+        name="CoinDeskAgent",
+        version="1.0.0",
+        tool_type=ToolType.DATA,
+        description="CoinDesk market data API agent - provides market discovery, historical candles, real-time prices, and news data",
+        capabilities=[
+            "market_discovery",
+            "instrument_resolution",
+            "historical_price_data",
+            "real_time_prices",
+            "news_and_sentiment",
+            "technical_analysis_ready_data"
+        ],
+        dependencies=[],
+        crypto_config={
+            "supported_exchanges": ["coindesk"],
+            "default_pair": "XBX-USD",
+            "data_types": ["OHLCV", "news", "headlines"],
+            "timeframes": ["minute", "hour", "day"],
+            "markets": ["sda"],
+            "api_features": {
+                "market_discovery": True,
+                "historical_candles": True,
+                "real_time_data": True,
+                "news_data": True,
+                "sentiment_data": True
+            }
+        },
+        created_at=time.time(),
+        updated_at=time.time()
+    )
+    
+    # Register the CoinDesk tool
+    success, message = registry.register_tool(coindesk_metadata, actor="initialization")
+    logger.info(f"CoinDesk registration: {success}, {message}")
+    
+    # Update status to healthy
+    if success:
+        success, message = registry.update_tool_status(
+            "CoinDeskAgent",
+            ToolStatus.HEALTHY,
+            "CoinDesk API tool fully operational"
+        )
+        logger.info(f"CoinDesk status: {success}, {message}")

@@ -191,18 +191,19 @@ class IndicatorEngine:
                 return TechnicalIndicators()
 
             last_row = df.iloc[-1]
+            close_price = float(last_row.get('close', 0))
 
             indicators = TechnicalIndicators(
-                rsi=float(last_row.get('rsi', 50)),
-                ema20=float(last_row.get('ema_20', last_row.get('close', 0))),
-                ema50=float(last_row.get('ema_50', last_row.get('close', 0))),
-                sma200=float(last_row.get('sma_200', last_row.get('close', 0))),
-                macd=float(last_row.get('macd', 0)),
-                macd_signal=float(last_row.get('macd_signal', 0)),
-                bb_upper=float(last_row.get('bb_upper', last_row.get('close', 0) * 1.1)),
-                bb_lower=float(last_row.get('bb_lower', last_row.get('close', 0) * 0.9)),
-                atr=float(last_row.get('atr', 0)),
-                obv=float(last_row.get('obv', 0))
+                rsi=float(last_row.get('rsi', 50) or 50),
+                ema20=float(last_row.get('ema_20', close_price) or close_price),
+                ema50=float(last_row.get('ema_50', close_price) or close_price),
+                sma200=float(last_row.get('sma_200', close_price) or close_price),
+                macd=float(last_row.get('macd', 0) or 0),
+                macd_signal=float(last_row.get('macd_signal', 0) or 0),
+                bb_upper=float(last_row.get('bb_upper', close_price * 1.1) or close_price * 1.1),
+                bb_lower=float(last_row.get('bb_lower', close_price * 0.9) or close_price * 0.9),
+                atr=float(last_row.get('atr', 0) or 0),
+                obv=float(last_row.get('obv', 0) or 0)
             )
 
             self.logger.info("✅ Extracted latest indicator snapshot")
@@ -247,7 +248,7 @@ class IndicatorEngine:
 
 # Example usage and testing
 if __name__ == "__main__":
-    from services.crypto_nansen import CryptoDataProvider
+    from services.crypto_coinmarketcap import CryptoDataProvider
 
     # Initialize components
     engine = IndicatorEngine()

@@ -3,6 +3,19 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
+import pandas as pd
+
+# Import indicator engine
+try:
+    from .indicator_engine import IndicatorEngine
+    from .common_models import Candle
+except ImportError:
+    import sys
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, current_dir)
+    from indicator_engine import IndicatorEngine
+    from common_models import Candle
 
 
 class RealTimeTool:
@@ -11,6 +24,7 @@ class RealTimeTool:
     def __init__(self, base_url: str = "https://api.binance.com/api/v3", timeout: int = 10) -> None:
         self.base_url = base_url
         self.timeout = timeout
+        self.indicator_engine = IndicatorEngine()
 
         self.logger = logging.getLogger("RealTimeTool")
         self.logger.setLevel(logging.INFO)
@@ -25,6 +39,7 @@ class RealTimeTool:
         symbol: str,
         intervals: Optional[List[str]] = None,
         limit: int = 50,
+        compute_indicators: bool = True,
     ) -> Dict[str, Any]:
         """
         Fetch live price, OHLCV data for multiple intervals, and 24h volume.
@@ -33,9 +48,10 @@ class RealTimeTool:
             symbol: Trading pair (e.g., "BTCUSDT").
             intervals: List of kline intervals (default: ["1m", "5m", "15m"]).
             limit: Number of candles per interval.
+            compute_indicators: Whether to compute technical indicators (default: True).
 
         Returns:
-            Structured JSON-compatible dict with price, ohlcv, and volume data.
+            Structured JSON-compatible dict with price, ohlcv, volume, and indicators data.
         """
         if not symbol:
             return {"error": "symbol is required"}
@@ -52,6 +68,11 @@ class RealTimeTool:
 
         for interval in intervals:
             ohlcv_data[interval] = self._fetch_ohlcv(normalized_symbol, interval, limit)
+            
+            if compute_indicators:
+                ohlcv_data[interval]["indicators"] = self._compute_indicators(
+                    ohlcv_data[interval]["candles"], interval
+                )
 
         return {
             "symbol": normalized_symbol,
@@ -61,6 +82,35 @@ class RealTimeTool:
             "source": "binance",
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
+
+    def _compute_indicators(self, candles: List[Dict], interval: str) -> Dict:
+        """Compute technical indicators for given candles."""
+        try:
+            # Convert candles to Candle objects
+            candle_objects = []
+            for c in candles:
+                candle_objects.append(Candle(
+                    timestamp=datetime.fromisoformat(c["open_time"].replace("Z", "")),
+                    open=c["open"],
+                    high=c["high"],
+                    low=c["low"],
+                    close=c["close"],
+                    volume=c["volume"]
+                ))
+            
+            # Convert to DataFrame and compute indicators
+            df = self.indicator_engine.candles_to_df(candle_objects)
+            df_with_indicators = self.indicator_engine.compute_indicators(df)
+            
+            # Get latest indicators
+            latest_indicators = self.indicator_engine.get_latest_indicator_snapshot(df_with_indicators)
+            
+            # Convert to dict
+            return latest_indicators.dict()
+            
+        except Exception as e:
+            self.logger.error("Failed to compute indicators: %s", e)
+            return {"error": str(e)}
 
     def _fetch_price(self, symbol: str) -> Dict[str, Any]:
         url = f"{self.base_url}/ticker/price"

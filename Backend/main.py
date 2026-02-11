@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/uSr/bin/env python3
 """
 Main Trading System with Tool Registry Integration and TUI Interface
 
@@ -40,26 +40,34 @@ from services.tool_registry import ToolRegistry, ToolMetadata, ToolType, ToolSta
 from services.data_manager import DataManager
 from services.real_time_tool import RealTimeTool
 
-# Set up logging with colors
-import colorlog
+# Set up logging with colors (optional colorlog fallback to standard logging)
+try:
+    import colorlog
+    COLORLOG_AVAILABLE = True
+except ImportError:
+    COLORLOG_AVAILABLE = False
+    import logging
 
 # Create a color formatter
-formatter = colorlog.ColoredFormatter(
-    '%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    log_colors={
-        'DEBUG': 'cyan',
-        'INFO': 'purple',
-        'WARNING': 'yellow',
-        'ERROR': 'red',
-        'CRITICAL': 'red,bg_white',
-        'SUCCESS': 'green',
-    },
-    secondary_log_colors={},
-    style='%'
-)
+if COLORLOG_AVAILABLE:
+    formatter = colorlog.ColoredFormatter(
+        '%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        log_colors={
+            'DEBUG': 'cyan',
+            'INFO': 'purple',
+            'WARNING': 'yellow',
+            'ERROR': 'red',
+            'CRITICAL': 'red,bg_white',
+            'SUCCESS': 'green',
+        },
+        secondary_log_colors={},
+        style='%'
+    )
+    handler = colorlog.StreamHandler()
+else:
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler = logging.StreamHandler()
 
-# Configure logging
-handler = colorlog.StreamHandler()
 handler.setFormatter(formatter)
 
 logging.basicConfig(level=logging.INFO, handlers=[handler])
@@ -72,7 +80,7 @@ class TradingSystem:
     Orchestrates all agents and provides comprehensive trading workflow management.
     """
     
-    def __init__(self, user_id: int, api_key: str):
+    def __init__(self, user_id: int, api_key: str, provider: Optional[str] = None):
         """Initialize all agents and the trading system with tool registry integration."""
         self.user_id = user_id
         self.api_key = api_key
@@ -95,6 +103,7 @@ class TradingSystem:
         self.thinker = VibeTraderThinker(api_key)
         self.orchestrator = LLMToolOrchestrator(
             api_key=api_key,
+            provider=provider,
             tool_registry=self.tool_registry,
             tools=self._build_tool_definitions(),
             tool_handlers=self._build_tool_handlers(),
@@ -205,7 +214,7 @@ class TradingSystem:
             crypto_config={
                 "supported_exchanges": ["binance", "coinbase"],
                 "default_pair": "BTC/USDT",
-                "llm_model": "openrouter/mistralai/mixtral-8x7b-instruct",
+                "llm_model": "loaded_from_api_keys.json",
                 "decision_factors": ["news", "technical", "ml", "risk", "portfolio"]
             }
         )
@@ -365,6 +374,9 @@ class TradingSystem:
                             "symbol": {"type": "string"},
                             "lookback_days": {"type": "integer", "default": 365},
                             "interval": {"type": "string", "default": "1d"},
+                            "future_steps": {"type": "integer", "default": 5},
+                            "train_if_missing": {"type": "boolean", "default": True},
+                            "force_retrain": {"type": "boolean", "default": False},
                         },
                         "required": ["symbol"],
                     },
@@ -407,7 +419,10 @@ class TradingSystem:
         }
 
     def _to_json_compatible(self, value: Any) -> Any:
-        """Convert dataclasses, enums, and datetimes to JSON-safe formats."""
+        """Convert dataclasses, Pydantic models, enums, and datetimes to JSON-safe formats."""
+        # Check if it's a Pydantic model (has dict() method)
+        if hasattr(value, "dict"):
+            return self._to_json_compatible(value.dict())
         if is_dataclass(value):
             return self._to_json_compatible(asdict(value))
         if isinstance(value, Enum):
@@ -448,17 +463,21 @@ class TradingSystem:
         symbol = args.get("symbol")
         lookback_days = args.get("lookback_days", 365)
         interval = args.get("interval", "1d")
-        historical_data = self.data_manager.fetch_historical_data(
-            symbol,
+        future_steps = args.get("future_steps", 5)
+        train_if_missing = args.get("train_if_missing", True)
+        force_retrain = args.get("force_retrain", False)
+
+        # Use asset-specific agent for correct model paths
+        agent = MLAgent(asset=symbol or "default")
+        result = agent.fetch_train_predict(
+            symbol=symbol,
             days=lookback_days,
             interval=interval,
+            future_steps=future_steps,
+            train_if_missing=train_if_missing,
+            force_retrain=force_retrain,
         )
-
-        if historical_data is None or historical_data.empty:
-            return {"ticker": symbol, "error": "No historical data available for ML analysis."}
-
-        ml_signal = self.ml_agent.get_ml_signal(symbol, historical_data)
-        return self._to_json_compatible(ml_signal)
+        return self._to_json_compatible(result)
 
     def _handle_risk_agent_tool(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Handle risk evaluation requests."""
@@ -838,9 +857,44 @@ class TradingSystem:
 
     def _safe_parse_json(self, content: str) -> Dict[str, Any]:
         """Safely parse JSON returned by the LLM."""
+        def _extract_first_json(text: str) -> str:
+            start = None
+            depth = 0
+            in_string = False
+            escape = False
+            for i, ch in enumerate(text):
+                if in_string:
+                    if escape:
+                        escape = False
+                    elif ch == "\\":
+                        escape = True
+                    elif ch == '"':
+                        in_string = False
+                    continue
+                else:
+                    if ch == '"':
+                        in_string = True
+                        continue
+                    if ch == '{':
+                        if depth == 0:
+                            start = i
+                        depth += 1
+                    elif ch == '}':
+                        if depth > 0:
+                            depth -= 1
+                            if depth == 0 and start is not None:
+                                return text[start:i + 1]
+            return ""
+
         try:
             return json.loads(content)
         except json.JSONDecodeError:
+            extracted = _extract_first_json(content)
+            if extracted:
+                try:
+                    return json.loads(extracted)
+                except json.JSONDecodeError:
+                    pass
             return {
                 "summary": "Model output was not valid JSON.",
                 "raw": content,
@@ -1031,6 +1085,9 @@ class TradingTUI:
 
         except Exception as e:
             print(f"❌ Error running analysis: {e}")
+            import traceback
+            print(f"\nStack trace:")
+            print(traceback.format_exc())
     
     def _show_registry_info(self) -> None:
         """Show registry information."""
@@ -1081,19 +1138,25 @@ def main():
         with open(config_path) as f:
             config = json.load(f)
         
-        # Try different key names
-        api_key = config.get('openrouter_key') or config.get('DATA_BASE') or config.get('api_key')
+        provider = (config.get('LLM_PROVIDER') or 'together').strip().lower()
+        if provider != 'together':
+            logger.warning(f"LLM_PROVIDER is set to '{provider}', but this entry point is intended for Together.")
+
+        api_key = config.get('TOGETHER_API_KEY')
         
         if not api_key:
             logger.warning("⚠️ No API key found in configuration. Using placeholder.")
-            api_key = "placeholder_api_key"
+            api_key = None
+        else:
+            masked = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) >= 8 else "***"
+            logger.info(f"Using API key: {masked}")
     
     except Exception as e:
         logger.error(f"❌ Error loading API key: {e}")
-        api_key = "placeholder_api_key"
+        api_key = None
     
     # Initialize the trading system
-    trading_system = TradingSystem(user_id=1, api_key=api_key)
+    trading_system = TradingSystem(user_id=1, api_key=api_key, provider=provider)
     
     # Start the TUI
     tui = TradingTUI(trading_system)

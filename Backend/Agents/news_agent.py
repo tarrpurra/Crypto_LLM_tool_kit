@@ -47,7 +47,7 @@ class NewsAgent:
         self.news_cache = {}
         self.cache_duration = 900  # 15 minutes in seconds
 
-    def fetch_news(self, symbol, days=1):
+    def fetch_news(self, symbol, days=10):
         """
         Fetch news articles for a given symbol from the last 'days' days.
         Uses caching to avoid repeated API calls.
@@ -287,7 +287,7 @@ class NewsAgent:
             "summary": f"News sentiment analysis shows {overall} bias with {confidence:.0%} confidence based on {len(top_articles)} articles (fallback analysis)."
         }
 
-    def get_news_signal(self, symbol, days=1, max_articles=5):
+    def get_news_signal(self, symbol, days=10, max_articles=5):
         """
         Main method to get news-based trading signal for a symbol.
 
@@ -318,5 +318,5 @@ class NewsAgent:
 # Example usage
 if __name__ == "__main__":
     agent = NewsAgent()
-    result = agent.get_news_signal("BTC", days=1)
+    result = agent.get_news_signal("BTC", days=10)
     print(json.dumps(result, indent=2))

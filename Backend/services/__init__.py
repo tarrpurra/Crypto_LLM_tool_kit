@@ -1,1 +1,1 @@
-__all__=["common_models","crypto_nansen","crypto_service","data_provider"]
+__all__=["common_models","crypto_coinmarketcap","crypto_service","data_provider"]

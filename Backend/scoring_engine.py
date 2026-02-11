@@ -161,6 +161,18 @@ class ScoringEngine:
         """
         score = 0.0
 
+        # Safeguard: Handle None values in signals
+        if signals.smart_money_inflow is None:
+            signals.smart_money_inflow = 0.0
+        if signals.exchange_inflow is None:
+            signals.exchange_inflow = 0.0
+        if signals.exchange_outflow is None:
+            signals.exchange_outflow = 0.0
+        if signals.holder_concentration is None:
+            signals.holder_concentration = 0.5
+        if signals.avg_token_age_days is None:
+            signals.avg_token_age_days = 30.0
+
         # Smart money inflows (positive signal)
         if signals.smart_money_inflow > 1000000:  # $1M+ inflow
             score += 4
@@ -226,22 +238,33 @@ class ScoringEngine:
         Calculate overall technical strength score (0-100)
         """
         try:
+            # Ensure all indicator values are valid numbers
+            rsi = float(indicators.rsi or 50)
+            ema20 = float(indicators.ema20 or 0)
+            ema50 = float(indicators.ema50 or 0)
+            sma200 = float(indicators.sma200 or 0)
+            macd = float(indicators.macd or 0)
+            macd_signal = float(indicators.macd_signal or 0)
+            bb_upper = float(indicators.bb_upper or 0)
+            bb_lower = float(indicators.bb_lower or 0)
+            obv = float(indicators.obv or 0)
+            
             # Component scores
             trend_score = self.score_trend(
                 indicators.close if hasattr(indicators, 'close') else 0,
-                indicators.ema20,
-                indicators.ema50,
-                indicators.sma200
+                ema20,
+                ema50,
+                sma200
             )
 
-            rsi_score = self.score_rsi(indicators.rsi)
+            rsi_score = self.score_rsi(rsi)
 
-            macd_score = self.score_macd(indicators.macd, indicators.macd_signal)
+            macd_score = self.score_macd(macd, macd_signal)
 
             bollinger_score = self.score_bollinger(
                 indicators.close if hasattr(indicators, 'close') else 0,
-                indicators.bb_upper,
-                indicators.bb_lower
+                bb_upper,
+                bb_lower
             )
 
             # Weighted combination

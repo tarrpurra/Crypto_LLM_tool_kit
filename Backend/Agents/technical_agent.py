@@ -5,12 +5,13 @@ Provides technical analysis signals with on-chain intelligence for crypto
 """
 
 import logging
+import pandas as pd
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 
 try:
     # Try relative imports (for when imported as part of package)
-    from Backend.services.crypto_nansen import CryptoDataProvider
+    from Backend.services.crypto_coinmarketcap import CryptoDataProvider
     from indicator_engine import IndicatorEngine
     from scoring_engine import ScoringEngine
     from services.common_models import (
@@ -27,7 +28,7 @@ except ImportError:
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
 
-    from services.crypto_nansen import CryptoDataProvider
+    from services.crypto_coinmarketcap import CryptoDataProvider
     from indicator_engine import IndicatorEngine
     from scoring_engine import ScoringEngine
     from services.common_models import (
@@ -190,7 +191,10 @@ class TechnicalAgent:
                                  bias: str, df: Any) -> RiskManagement:
         """Calculate stoploss and target levels using ATR"""
         try:
-            if atr <= 0 or current_price <= 0:
+            # Handle None, NaN, or invalid values
+            if atr is None or not isinstance(atr, (int, float)) or atr <= 0:
+                return RiskManagement()
+            if current_price is None or not isinstance(current_price, (int, float)) or current_price <= 0:
                 return RiskManagement()
 
             atr_multiplier = 1.5  # Standard ATR stop distance
@@ -210,11 +214,22 @@ class TechnicalAgent:
                 target2 = current_price * 1.10  # 10% target
 
             # Calculate risk-reward ratio
-            if stoploss and target1:
-                if bias == "bullish":
-                    rr_ratio = (target1 - current_price) / (current_price - stoploss)
-                else:  # bearish
-                    rr_ratio = (current_price - target1) / (stoploss - current_price)
+            if stoploss is not None and target1 is not None:
+                try:
+                    if bias == "bullish":
+                        denominator = current_price - stoploss
+                        if denominator != 0:
+                            rr_ratio = (target1 - current_price) / denominator
+                        else:
+                            rr_ratio = None
+                    else:  # bearish
+                        denominator = stoploss - current_price
+                        if denominator != 0:
+                            rr_ratio = (current_price - target1) / denominator
+                        else:
+                            rr_ratio = None
+                except (ZeroDivisionError, TypeError):
+                    rr_ratio = None
             else:
                 rr_ratio = None
 
@@ -232,13 +247,25 @@ class TechnicalAgent:
     def _assess_market_condition(self, df: Any) -> MarketCondition:
         """Assess overall market condition"""
         try:
+            import math
+            
             # Calculate volatility (20-day rolling std of returns)
             returns_volatility = df['close'].pct_change().rolling(20).std().iloc[-1]
+            
+            # Handle NaN values
+            if pd.isna(returns_volatility) or returns_volatility is None:
+                returns_volatility = 0.0
 
             # Trend assessment
             sma20 = df['close'].rolling(20).mean().iloc[-1]
             sma50 = df['close'].rolling(50).mean().iloc[-1]
             current_price = df['close'].iloc[-1]
+            
+            # Handle NaN values
+            if pd.isna(sma20):
+                sma20 = current_price
+            if pd.isna(sma50):
+                sma50 = current_price
 
             if current_price > sma20 > sma50:
                 trend = "bullish"
@@ -249,6 +276,9 @@ class TechnicalAgent:
 
             # Volatility assessment
             avg_volatility = df['close'].pct_change().rolling(20).std().mean()
+            if pd.isna(avg_volatility) or avg_volatility is None:
+                avg_volatility = 0.01  # Default 1% volatility
+            
             if returns_volatility > avg_volatility * 1.5:
                 volatility = "high"
             elif returns_volatility < avg_volatility * 0.7:
@@ -259,6 +289,13 @@ class TechnicalAgent:
             # Volume assessment (relative to average)
             avg_volume = df['volume'].rolling(20).mean().iloc[-1]
             current_volume = df['volume'].iloc[-1]
+            
+            # Handle NaN values
+            if pd.isna(avg_volume) or avg_volume is None or avg_volume == 0:
+                avg_volume = 1
+            if pd.isna(current_volume) or current_volume is None:
+                current_volume = 1
+                
             volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1
 
             if volume_ratio > 1.5:

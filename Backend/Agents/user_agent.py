@@ -21,8 +21,30 @@ class UserAgent:
         user_data = {
             "user_id": self.user_id,
             "positions": [],
-            "account_state": None,
-            "risk_config": None,
+            "account_state": {
+                "equity_value": 0.0,
+                "cash_available": 0.0,
+                "day_pnl": 0.0,
+                "timestamp": None
+            },
+            "risk_config": {
+                "max_risk_per_trade_pct": 1.0,
+                "max_symbol_exposure_pct": 15.0,
+                "max_market_exposure_pct": 60.0,
+                "max_open_positions": 8,
+                "max_daily_loss_pct": 3.0,
+                "min_rr": 1.5,
+                "min_sl_distance_pct": 0.3,
+                "max_sl_distance_pct": 8.0,
+                "min_confidence": 0.45,
+                "confidence_position_scale": True,
+                "vol_position_scale": True,
+                "max_volatility_pct": 6.0,
+                "equity_qty_step": 1,
+                "crypto_qty_step": 0.0001,
+                "slippage_bps": 5.0,
+                "fee_bps": 2.0
+            },
         }
 
         # Fetch user details

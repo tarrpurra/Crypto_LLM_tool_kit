@@ -8,6 +8,7 @@ functionality and integration with the trading workflow.
 
 import logging
 import time
+from datetime import datetime  # ✅ FIXED: Added missing import
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import asdict
 
@@ -71,6 +72,9 @@ class ToolRegistryAgent:
                 "default_pair": "BTC/USDT"
             }
         
+        # ✅ FIXED: Ensure timestamps are always set
+        current_time = time.time()
+        
         # Create metadata
         metadata = ToolMetadata(
             name=agent_name,
@@ -80,8 +84,8 @@ class ToolRegistryAgent:
             capabilities=capabilities,
             dependencies=dependencies,
             crypto_config=crypto_config,
-            created_at=time.time(),
-            updated_at=time.time()
+            created_at=current_time,
+            updated_at=current_time
         )
         
         # Register with registry
@@ -365,6 +369,15 @@ class ToolRegistryAgent:
     def _calculate_overall_compliance(self) -> Dict[str, Any]:
         """Calculate overall compliance metrics."""
         agents = self.get_all_agents()
+        
+        # ✅ FIXED: Handle empty agents list
+        if not agents:
+            return {
+                "compliant_agents": 0,
+                "non_compliant_agents": 0,
+                "compliance_rate": 0.0,
+                "compliance_level": "N/A"
+            }
         
         compliant_count = 0
         non_compliant_count = 0

@@ -35,16 +35,16 @@ class OnchainSignals(BaseModel):
 
 class TechnicalIndicators(BaseModel):
     """Technical indicator values"""
-    rsi: Optional[float] = None
-    ema20: Optional[float] = None
-    ema50: Optional[float] = None
-    sma200: Optional[float] = None
-    macd: Optional[float] = None
-    macd_signal: Optional[float] = None
-    bb_upper: Optional[float] = None
-    bb_lower: Optional[float] = None
-    atr: Optional[float] = None
-    obv: Optional[float] = None
+    rsi: float = 50.0
+    ema20: float = 0.0
+    ema50: float = 0.0
+    sma200: float = 0.0
+    macd: float = 0.0
+    macd_signal: float = 0.0
+    bb_upper: float = 0.0
+    bb_lower: float = 0.0
+    atr: float = 0.0
+    obv: float = 0.0
 
 
 class StrengthScores(BaseModel):

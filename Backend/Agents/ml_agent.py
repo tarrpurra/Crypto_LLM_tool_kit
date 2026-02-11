@@ -1,21 +1,47 @@
 import os
 import json
 import logging
+import time
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
-import xgboost as xgb
-import tensorflow as tf
 
-# Enable eager execution explicitly
-tf.config.run_functions_eagerly(True)
+# Try to import XGBoost, but make it optional
+try:
+    import xgboost as xgb
+    XGBOOST_AVAILABLE = True
+except ImportError as e:
+    XGBOOST_AVAILABLE = False
+    logging.warning(f"XGBoost not available: {e}. XGBoost models will not be functional.")
+    xgb = None
 
-from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.layers import LSTM, Dense, Dropout
-from tensorflow.keras.callbacks import EarlyStopping
+# Try to import TensorFlow, but make it optional
+try:
+    import tensorflow as tf
+    if hasattr(tf, 'config'):
+        tf.config.run_functions_eagerly(True)
+    from tensorflow.keras.models import Sequential, load_model
+    from tensorflow.keras.layers import LSTM, Dense, Dropout
+    from tensorflow.keras.callbacks import EarlyStopping
+    TENSORFLOW_AVAILABLE = True
+except (ImportError, AttributeError) as e:
+    TENSORFLOW_AVAILABLE = False
+    logging.warning(f"TensorFlow not available: {e}. LSTM models will not be functional.")
+    
 import joblib
+
+# Try to import DataManager
+try:
+    from services.data_manager import DataManager
+except ImportError:
+    import sys
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(current_dir)
+    if parent_dir not in sys.path:
+        sys.path.insert(0, parent_dir)
+    from services.data_manager import DataManager
 
 class MLAgent:
     def __init__(self, asset='default'):
@@ -29,6 +55,7 @@ class MLAgent:
             self.logger.addHandler(handler)
 
         self.asset = asset.lower()
+        self.data_manager = DataManager()
         self.models_dir = os.path.join(os.path.dirname(__file__), '..', 'data', 'models')
         os.makedirs(self.models_dir, exist_ok=True)
 
@@ -49,15 +76,21 @@ class MLAgent:
         """Load pre-trained models if they exist."""
         try:
             if os.path.exists(self.lstm_model_path):
-                # Load model with compile=False to avoid optimizer issues
-                self.lstm_model = load_model(self.lstm_model_path, compile=False)
-                # Recompile with a fresh optimizer
-                from tensorflow.keras.optimizers import Adam
-                self.lstm_model.compile(optimizer=Adam(learning_rate=0.001), loss='mean_squared_error')
-                self.logger.info("Loaded LSTM model")
+                if not TENSORFLOW_AVAILABLE:
+                    self.logger.warning("TensorFlow/Keras not available; cannot load LSTM model")
+                else:
+                    # Load model with compile=False to avoid optimizer issues
+                    self.lstm_model = load_model(self.lstm_model_path, compile=False)
+                    # Recompile with a fresh optimizer
+                    from tensorflow.keras.optimizers import Adam
+                    self.lstm_model.compile(optimizer=Adam(learning_rate=0.001), loss='mean_squared_error')
+                    self.logger.info("Loaded LSTM model")
             if os.path.exists(self.xgb_model_path):
-                self.xgb_model = joblib.load(self.xgb_model_path)
-                self.logger.info("Loaded XGBoost model")
+                if not XGBOOST_AVAILABLE:
+                    self.logger.warning("XGBoost not available; cannot load XGBoost model")
+                else:
+                    self.xgb_model = joblib.load(self.xgb_model_path)
+                    self.logger.info("Loaded XGBoost model")
             if os.path.exists(self.scaler_path):
                 self.scaler = joblib.load(self.scaler_path)
                 self.logger.info("Loaded scaler")
@@ -98,12 +131,18 @@ class MLAgent:
 
         X = np.array(X)
         y = np.array(y)
-        X = X.reshape((X.shape[0], X.shape[1], 1))
+        
+        # Check if we have valid data before reshaping
+        if len(X) > 0 and len(X.shape) > 1:
+            X = X.reshape((X.shape[0], X.shape[1], 1))
 
         return X, y
 
     def build_lstm_model(self, input_shape):
         """Build LSTM model architecture with better metrics."""
+        if not TENSORFLOW_AVAILABLE:
+            raise ImportError("TensorFlow/Keras not available. Cannot build LSTM model.")
+            
         model = Sequential([
             LSTM(50, return_sequences=True, input_shape=input_shape),
             Dropout(0.2),
@@ -122,8 +161,12 @@ class MLAgent:
         )
         return model
 
-    def train_lstm(self, data, lookback=60, epochs=50, batch_size=32):
+    def train_lstm(self, data, lookback=60, epochs=50, batch_size=32, verbose=1):
         """Train LSTM model on historical data with chronological split."""
+        if not TENSORFLOW_AVAILABLE:
+            self.logger.warning("TensorFlow/Keras not available. Skipping LSTM training.")
+            return None
+            
         try:
             # Split data chronologically first (80% train, 20% test)
             split_idx = int(len(data) * 0.8)
@@ -135,6 +178,10 @@ class MLAgent:
 
             # Prepare test data (uses fitted scaler - no data leakage)
             X_test, y_test = self.prepare_lstm_data(test_data, lookback, fit_scaler=False)
+            
+            # Check if we have valid data for training
+            if len(X_train) == 0 or len(X_test) == 0:
+                raise ValueError(f"Insufficient data for training. Need at least {lookback + 1} records")
 
             # Always build a fresh model to avoid optimizer conflicts
             self.lstm_model = self.build_lstm_model((X_train.shape[1], 1))
@@ -148,7 +195,7 @@ class MLAgent:
                 validation_data=(X_test, y_test),
                 callbacks=[early_stop],
                 shuffle=False,  # CRITICAL: No shuffling within epochs for time series
-                verbose=1
+                verbose=verbose
             )
 
             self.save_models()
@@ -235,6 +282,15 @@ class MLAgent:
         try:
             if not self.lstm_model:
                 return {"error": "LSTM model not trained"}
+
+            if not isinstance(data, pd.DataFrame) or 'close' not in data.columns:
+                return {"error": "Data must be DataFrame with 'close' column"}
+
+            if len(data) < lookback:
+                return {"error": f"Insufficient data for prediction: need {lookback} records"}
+
+            if not hasattr(self.scaler, 'scale_'):
+                return {"error": "Scaler not fitted"}
 
             prices = data['close'].values[-lookback:].reshape(-1, 1)
             scaled_prices = self.scaler.transform(prices)
@@ -347,6 +403,10 @@ class MLAgent:
             split_idx = int(len(X) * 0.8)
             X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
             y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+
+            if not XGBOOST_AVAILABLE:
+                self.logger.warning("XGBoost not available, skipping XGBoost training")
+                return None
 
             self.xgb_model = xgb.XGBRegressor(
                 objective='reg:squarederror',
@@ -463,6 +523,129 @@ class MLAgent:
                 "ticker": symbol,
                 "error": str(e)
             }
+
+
+    def fetch_train_predict(self, symbol, days=365, interval='1d', lookback=60, future_steps=5,
+                            train_if_missing=True, force_retrain=False, lstm_epochs=30,
+                            batch_size=32, xgb_lookback=30, add_features=True):
+        '''Fetch data, (optionally) train models, and return ML predictions.'''
+        start_time = time.time()
+        response = {
+            "ticker": symbol,
+            "asset": self.asset,
+            "status": "failed",
+            "data": {},
+            "model_status": {
+                "lstm": {"available": TENSORFLOW_AVAILABLE, "trained": self.lstm_model is not None},
+                "xgb": {"available": XGBOOST_AVAILABLE, "trained": self.xgb_model is not None}
+            },
+            "training": {},
+            "predictions": {},
+            "errors": []
+        }
+
+        if not symbol:
+            response["errors"].append("symbol is required")
+            return response
+
+        try:
+            raw_data = self.data_manager.fetch_historical_data(symbol, days=days, interval=interval)
+            if raw_data is None or raw_data.empty:
+                response["errors"].append("No historical data available")
+                return response
+
+            data = self.data_manager.prepare_ml_data(raw_data, add_features=add_features)
+            if data is None or data.empty:
+                response["errors"].append("Failed to prepare ML data")
+                return response
+
+            response["data"] = {
+                "records": len(data),
+                "start": str(data.index.min()),
+                "end": str(data.index.max()),
+                "interval": interval,
+                "columns": list(data.columns)
+            }
+
+            # Train models if needed
+            if train_if_missing or force_retrain:
+                if force_retrain or self.lstm_model is None:
+                    response["training"]["lstm"] = self.train_lstm(
+                        data,
+                        lookback=lookback,
+                        epochs=lstm_epochs,
+                        batch_size=batch_size,
+                        verbose=0
+                    )
+                if force_retrain or self.xgb_model is None:
+                    response["training"]["xgb"] = self.train_xgb(data, lookback=xgb_lookback)
+
+            # Update model status after training
+            response["model_status"]["lstm"]["trained"] = self.lstm_model is not None
+            response["model_status"]["xgb"]["trained"] = self.xgb_model is not None
+
+            # Predict
+            response["predictions"] = self.get_ml_signal(symbol, data, future_steps=future_steps)
+
+            # Collect errors
+            if isinstance(response["predictions"], dict) and "error" in response["predictions"]:
+                response["errors"].append(response["predictions"]["error"])
+            for model_name, result in response["training"].items():
+                if isinstance(result, dict) and "error" in result:
+                    response["errors"].append(f"{model_name}: {result['error']}")
+
+            if response["errors"]:
+                response["status"] = "partial" if response["predictions"] else "failed"
+            else:
+                response["status"] = "success"
+
+            response["elapsed_ms"] = int((time.time() - start_time) * 1000)
+            return response
+
+        except Exception as e:
+            response["errors"].append(str(e))
+            response["elapsed_ms"] = int((time.time() - start_time) * 1000)
+            return response
+
+    def get_tool_manifest(self):
+        '''Return tool metadata for registry or dynamic discovery.'''
+        return {
+            "name": "MLAgent",
+            "version": "1.1.0",
+            "description": "ML price prediction tool (LSTM, XGBoost) with data fetch + training pipeline",
+            "capabilities": [
+                "price_prediction",
+                "model_training",
+                "signal_generation",
+                "data_fetching"
+            ],
+            "methods": {
+                "fetch_train_predict": "Fetch data, train models if needed, and return predictions",
+                "get_ml_signal": "Return predictions using already-prepared data"
+            },
+            "dependencies": ["DataManager"],
+            "crypto_config": {
+                "supported_exchanges": ["binance", "coinbase"],
+                "default_pair": "BTC/USDT",
+                "models": ["lstm", "xgboost"]
+            }
+        }
+
+    def invoke(self, method: str, **kwargs):
+        '''Invoke a method by name with arguments.'''
+        if not hasattr(self, method):
+            return {
+                "status": "failed",
+                "error": f"Method '{method}' not found",
+                "available_methods": list(self.get_tool_manifest()["methods"].keys())
+            }
+        try:
+            func = getattr(self, method)
+            return func(**kwargs)
+        except TypeError as e:
+            return {"status": "failed", "error": f"Invalid arguments: {str(e)}"}
+        except Exception as e:
+            return {"status": "failed", "error": str(e)}
 
 # Example usage
 if __name__ == "__main__":
